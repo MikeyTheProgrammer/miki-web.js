@@ -29,7 +29,7 @@
   },
   "homepage": "https://wwebjs.dev/",
   "dependencies": {
-    "@MikeyTheProgrammer/mikiRaid": "github:MikeyTheProgrammer/mikiRaid",
+    "@MikeyTheProgrammer/mikiRaid": "github:MikeyTheProgrammer/mikiRaid#1.0",
     "fluent-ffmpeg": "^2.1.2",
     "jsqr": "^1.3.1",
     "mime": "^3.0.0",
