@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-web.js",
-  "version": "1.34.5-alpha.3",
-  "description": "Library for interacting with the WhatsApp Web API ",
+  "name": "miki-web.js",
+  "version": "1.34.5-alpha.4",
+  "description": "Fork of whatsapp-web.js with markedUnread fix",
   "main": "./index.js",
   "typings": "./index.d.ts",
   "scripts": {
