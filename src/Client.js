@@ -40,6 +40,7 @@ const {exposeFunctionIfAbsent} = require('./util/Puppeteer');
  * @param {string} options.deviceName - Sets the device name of a current linked device., i.e.: 'TEST'.
  * @param {string} options.browserName - Sets the browser name of a current linked device, i.e.: 'Firefox'.
  * @param {object} options.proxyAuthentication - Proxy Authentication object.
+ * @param {boolean} options.liteMode - If true, only registers essential event listeners (message, state change) to reduce resource usage on low-RAM servers.
  * 
  * @fires Client#qr
  * @fires Client#authenticated
@@ -241,11 +242,12 @@ class Client extends EventEmitter {
                 }
                 let start = Date.now();
                 let res = false;
-                while(start > (Date.now() - 30000)){
+                const storeTimeout = this.options.storeInjectionTimeout || 300000; // 5 minutes default for low-RAM servers
+                while(start > (Date.now() - storeTimeout)){
                     // Check window.Store Injection
                     res = await this.pupPage.evaluate('window.Store != undefined');
                     if(res){break;}
-                    await new Promise(r => setTimeout(r, 200));
+                    await new Promise(r => setTimeout(r, 500));
                 }
                 if(!res){
                     throw 'ready timeout';
@@ -421,6 +423,67 @@ class Client extends EventEmitter {
      * @property {boolean} reinject is this a reinject?
      */
     async attachEventListeners() {
+        // ── liteMode: only register message + connection state listeners ──
+        if (this.options.liteMode) {
+            await exposeFunctionIfAbsent(this.pupPage, 'onAddMessageEvent', msg => {
+                if (msg.type === 'gp2') {
+                    const notification = new GroupNotification(this, msg);
+                    if (['add', 'invite', 'linked_group_join'].includes(msg.subtype)) {
+                        this.emit(Events.GROUP_JOIN, notification);
+                    } else if (msg.subtype === 'remove' || msg.subtype === 'leave') {
+                        this.emit(Events.GROUP_LEAVE, notification);
+                    } else {
+                        this.emit(Events.GROUP_UPDATE, notification);
+                    }
+                    return;
+                }
+
+                const message = new Message(this, msg);
+                this.emit(Events.MESSAGE_CREATE, message);
+
+                if (msg.id.fromMe) return;
+                this.emit(Events.MESSAGE_RECEIVED, message);
+            });
+
+            await exposeFunctionIfAbsent(this.pupPage, 'onAppStateChangedEvent', async (state) => {
+                this.emit(Events.STATE_CHANGED, state);
+
+                const ACCEPTED_STATES = [WAState.CONNECTED, WAState.OPENING, WAState.PAIRING, WAState.TIMEOUT];
+
+                if (this.options.takeoverOnConflict) {
+                    ACCEPTED_STATES.push(WAState.CONFLICT);
+                    if (state === WAState.CONFLICT) {
+                        setTimeout(() => {
+                            this.pupPage.evaluate(() => window.Store.AppState.takeover());
+                        }, this.options.takeoverTimeoutMs);
+                    }
+                }
+
+                if (!ACCEPTED_STATES.includes(state)) {
+                    await this.authStrategy.disconnect();
+                    this.emit(Events.DISCONNECTED, state);
+                    this.destroy();
+                }
+            });
+
+            // Wire up only essential Store event bindings
+            await this.pupPage.evaluate(() => {
+                window.Store.Msg.on('add', (msg) => {
+                    if (msg.isNewMsg) {
+                        if (msg.type === 'ciphertext') {
+                            msg.once('change:type', (_msg) => window.onAddMessageEvent(window.WWebJS.getMessageModel(_msg)));
+                        } else {
+                            window.onAddMessageEvent(window.WWebJS.getMessageModel(msg));
+                        }
+                    }
+                });
+                window.Store.AppState.on('change:state', (_AppState, state) => { window.onAppStateChangedEvent(state); });
+            });
+
+            return; // Skip all other listeners in liteMode
+        }
+        // ── End liteMode ──
+
         await exposeFunctionIfAbsent(this.pupPage, 'onAddMessageEvent', msg => {
             if (msg.type === 'gp2') {
                 const notification = new GroupNotification(this, msg);
