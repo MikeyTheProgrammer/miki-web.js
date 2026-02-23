@@ -608,6 +608,9 @@ declare namespace WAWebJS {
         browserName?: string,
         /** Object with proxy autentication requirements @default: undefined */
         proxyAuthentication?: {username: string, password: string} | undefined
+        /** If true, only registers essential event listeners (message, state change) to reduce resource usage on low-RAM servers.
+         * @default false */
+        liteMode?: boolean,
         /** Phone number pairing configuration. Refer the requestPairingCode function of Client. 
          * @default
          * {
